@@ -47,10 +47,21 @@ button.secondary{background:transparent;color:var(--danger);padding:4px 8px;font
 <body>
 <div class="wrap">
   <h1>💸 Splitter <span class="status" id="status"></span></h1>
+  <div class="note" id="whoami" style="display:none;margin-top:-8px;margin-bottom:14px"></div>
 
   <div class="card" id="setupCard">
     <h2>Setup needed</h2>
     <div class="note">Open this HTML file, find the line near the top of the &lt;script&gt; that says <code>const SCRIPT_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";</code>, and replace the placeholder with your deployed Apps Script Web App URL. Save and reload.</div>
+  </div>
+
+  <div class="card" id="whoAmICard" style="display:none">
+    <h2>Who are you?</h2>
+    <div class="people-list" id="whoAmIList"></div>
+    <label style="margin-top:14px">Not listed? Add yourself</label>
+    <div class="row">
+      <input id="whoAmINew" placeholder="Your name" onkeydown="if(event.key==='Enter')addSelfAndPick()">
+      <button onclick="addSelfAndPick()">Join</button>
+    </div>
   </div>
 
   <div id="appBody" style="display:none">
@@ -89,31 +100,81 @@ button.secondary{background:transparent;color:var(--danger);padding:4px 8px;font
     <div class="card">
       <h2>Who Pays Whom</h2>
       <div id="settleList"><div class="empty">Nothing to settle yet.</div></div>
-      <div class="note">Note : Wait for 5s to sync data.</div>
+      <div class="note">Data lives in your Google Sheet. Anyone with this file and the same URL sees the same data (refreshes every 5s).</div>
     </div>
   </div>
 </div>
 
 <script>
 // ↓↓↓ Paste your deployed Apps Script Web App URL here ↓↓↓
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwOYZZIqOQ_1hmwLHP_RuE7sMVcTs8W7s_eou65KRP48HwizRvPpH1BfFsC7d3zoslF/exec";
+const SCRIPT_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
 // ↑↑↑ e.g. "https://script.google.com/macros/s/AKfycb.../exec" ↑↑↑
 
 let people = [];
 let expenses = [];
 let pollTimer = null;
+let MY_ID = localStorage.getItem('splitter-my-id') || '';
 
 function setStatus(t){ document.getElementById('status').textContent = t; }
+
+function switchIdentity(){
+  MY_ID = '';
+  localStorage.removeItem('splitter-my-id');
+  showWhoAmI();
+}
+
+function pickIdentity(id){
+  MY_ID = id;
+  localStorage.setItem('splitter-my-id', id);
+  showApp();
+  render();
+}
+
+async function addSelfAndPick(){
+  const input = document.getElementById('whoAmINew');
+  const name = input.value.trim();
+  if(!name) return;
+  const existing = people.find(p=>p.name===name);
+  if(existing){ pickIdentity(existing.id); return; }
+  try{
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'addPerson', name })
+    });
+    const data = await res.json();
+    await fetchData();
+    if(data.id) pickIdentity(data.id);
+  }catch(e){ alert('Could not add you — check the connection and try again.'); }
+}
+
+function showWhoAmI(){
+  document.getElementById('appBody').style.display = 'none';
+  document.getElementById('whoAmICard').style.display = '';
+  document.getElementById('whoami').style.display = 'none';
+  const list = document.getElementById('whoAmIList');
+  list.innerHTML = people.length ? people.map(p=>
+    `<span class="chip" style="cursor:pointer" onclick="pickIdentity('${escapeAttr(p.id)}')">${escapeHtml(p.name)}</span>`
+  ).join('') : '<span class="empty">No one added yet — add yourself below.</span>';
+}
+
+function showApp(){
+  document.getElementById('whoAmICard').style.display = 'none';
+  document.getElementById('appBody').style.display = '';
+  const me = people.find(p=>p.id===MY_ID);
+  const w = document.getElementById('whoami');
+  w.style.display = '';
+  w.innerHTML = me ? `Hi, ${escapeHtml(me.name)} · <a href="#" onclick="switchIdentity();return false;" style="color:var(--accent)">not you?</a>` : '';
+}
 
 function boot(){
   if(!SCRIPT_URL || SCRIPT_URL.indexOf('PASTE_YOUR') === 0){
     document.getElementById('setupCard').style.display = '';
+    document.getElementById('whoAmICard').style.display = 'none';
     document.getElementById('appBody').style.display = 'none';
     setStatus('not configured');
     return;
   }
   document.getElementById('setupCard').style.display = 'none';
-  document.getElementById('appBody').style.display = '';
   setStatus('connecting…');
   fetchData();
   if(pollTimer) clearInterval(pollTimer);
@@ -127,7 +188,13 @@ async function fetchData(){
     people = data.people || [];
     expenses = data.expenses || [];
     setStatus('synced');
-    render();
+    if(!SCRIPT_URL || SCRIPT_URL.indexOf('PASTE_YOUR') === 0) return;
+    if(!MY_ID || !people.some(p=>p.id===MY_ID)){
+      showWhoAmI();
+    } else {
+      showApp();
+      render();
+    }
   }catch(e){
     setStatus('sync error — check URL');
   }
@@ -213,7 +280,7 @@ function render(){
   ).join('') : '<span class="empty">No people added yet.</span>';
 
   const sel = document.getElementById('expPaidBy');
-  const prev = sel.value;
+  const prev = sel.value || MY_ID;
   sel.innerHTML = people.map(p=>`<option value="${escapeAttr(p.id)}">${escapeHtml(p.name)}</option>`).join('');
   if(people.some(p=>p.id===prev)) sel.value = prev;
 
@@ -236,14 +303,21 @@ function render(){
     const v = bal[p.id]||0;
     const cls = v>0.005?'pos':(v<-0.005?'neg':'');
     const label = v>0.005 ? `is owed ₹${v.toFixed(2)}` : (v<-0.005 ? `owes ₹${(-v).toFixed(2)}` : 'settled up');
-    return `<div class="balance-row"><span>${escapeHtml(p.name)}</span><span class="${cls}">${label}</span></div>`;
+    const meMark = p.id===MY_ID ? ' <strong>(you)</strong>' : '';
+    return `<div class="balance-row"><span>${escapeHtml(p.name)}${meMark}</span><span class="${cls}">${label}</span></div>`;
   }).join('') : '<div class="empty">Add people and expenses to see balances.</div>';
 
   const tx = computeSettlements(bal);
   const st = document.getElementById('settleList');
-  st.innerHTML = tx.length ? tx.map(t=>
-    `<div class="settle-row">${escapeHtml(nameOf(t.from))} → ${escapeHtml(nameOf(t.to))}: <strong>₹${t.amount.toFixed(2)}</strong></div>`
-  ).join('') : '<div class="empty">Nothing to settle right now.</div>';
+  st.innerHTML = tx.length ? tx.map(t=>{
+    const canSettle = t.from === MY_ID;
+    const btn = canSettle ? ` <button class="secondary" style="color:var(--accent)" onclick="settleUp('${escapeAttr(t.from)}','${escapeAttr(t.to)}',${t.amount})">Mark paid</button>` : '';
+    return `<div class="settle-row">${escapeHtml(nameOf(t.from))} → ${escapeHtml(nameOf(t.to))}: <strong>₹${t.amount.toFixed(2)}</strong>${btn}</div>`;
+  }).join('') : '<div class="empty">Nothing to settle right now.</div>';
+}
+
+function settleUp(fromId, toId, amount){
+  callScript('addExpense', { desc: 'Settlement', amount, paidBy: fromId, splitAmong: [toId] });
 }
 
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
