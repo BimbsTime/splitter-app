@@ -71,7 +71,7 @@ button.secondary{background:transparent;color:var(--danger);padding:4px 8px;font
       <label>Description</label>
       <input id="expDesc" placeholder="e.g. Dinner, Groceries">
       <label>Amount</label>
-      <input id="expAmount" type="number" step="0.01" placeholder="0.00">
+      <input id="expAmount" type="number" step="0.01" placeholder="₹0.00">
       <label>Paid by</label>
       <select id="expPaidBy"></select>
       <label>Split among</label>
@@ -232,7 +232,7 @@ function render(){
   const el = document.getElementById('expenseList');
   el.innerHTML = expenses.length ? expenses.slice().reverse().map(e=>
     `<div class="expense">
-      <div class="expense-top"><span>${escapeHtml(e.desc)}</span><span>$${Number(e.amount).toFixed(2)} <button class="secondary" onclick="removeExpense('${escapeAttr(e.id)}')">✕</button></span></div>
+      <div class="expense-top"><span>${escapeHtml(e.desc)}</span><span>₹${Number(e.amount).toFixed(2)} <button class="secondary" onclick="removeExpense('${escapeAttr(e.id)}')">✕</button></span></div>
       <div class="expense-sub">${escapeHtml(nameOf(e.paidBy))} paid · split among ${e.splitAmong.map(nameOf).map(escapeHtml).join(', ')}</div>
     </div>`
   ).join('') : '<div class="empty">No expenses yet.</div>';
@@ -242,14 +242,14 @@ function render(){
   bl.innerHTML = people.length ? people.map(p=>{
     const v = bal[p.id]||0;
     const cls = v>0.005?'pos':(v<-0.005?'neg':'');
-    const label = v>0.005 ? `is owed $${v.toFixed(2)}` : (v<-0.005 ? `owes $${(-v).toFixed(2)}` : 'settled up');
+    const label = v>0.005 ? `is owed ₹${v.toFixed(2)}` : (v<-0.005 ? `owes ₹${(-v).toFixed(2)}` : 'settled up');
     return `<div class="balance-row"><span>${escapeHtml(p.name)}</span><span class="${cls}">${label}</span></div>`;
   }).join('') : '<div class="empty">Add people and expenses to see balances.</div>';
 
   const tx = computeSettlements(bal);
   const st = document.getElementById('settleList');
   st.innerHTML = tx.length ? tx.map(t=>
-    `<div class="settle-row">${escapeHtml(nameOf(t.from))} → ${escapeHtml(nameOf(t.to))}: <strong>$${t.amount.toFixed(2)}</strong></div>`
+    `<div class="settle-row">${escapeHtml(nameOf(t.from))} → ${escapeHtml(nameOf(t.to))}: <strong>₹${t.amount.toFixed(2)}</strong></div>`
   ).join('') : '<div class="empty">Nothing to settle right now.</div>';
 }
 
